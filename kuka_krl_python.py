@@ -40,7 +40,7 @@ class KRL:
         self.declaration_section += f"DECL REAL VEL = {speed}\n"
         self.declaration_section += f"DECL REAL ACC = {acceleration}\n"
 
-    def set_start_parameters(self, base=0, tool=0, speed=15, acc=100, pos=None):
+    def set_start_parameters(self, base=0, tool=0, speed=15, acc=100, lspeed = 0.05, advance = 3, pos=None):
         """Defines the start position in the declaration section"""
         if pos is None:
             pos = {"A1": 5, "A2": -90, "A3": 100, "A4": 5, "A5": -10, "A6": -5, "E1": 0, "E2": 0, "E3": 0, "E4": 0}
@@ -54,37 +54,52 @@ class KRL:
             f"FDAT_ACT = {{TOOL_NO {tool}, BASE_NO {base}, IPO_FRAME #BASE}}\n"
             f"BAS(#PTP_PARAMS, {speed})\n"
             ";ENDFOLD\n\n"
-        )
-
-        self.motion_section += f"PTP {{A1 {pos['A1']}, A2 {pos['A2']}, A3 {pos['A3']}, A4 {pos['A4']}, A5 {pos['A5']}, A6 {pos['A6']}, E1 {pos['E1']}, E2 {pos['E2']}, E3 {pos['E3']}, E4 {pos['E4']}}}\n"
-
-    def set_linear_speed(self, speed=0.05, advance=3):
-        """Defines linear speed settings before motion"""
-        self.declaration_section += (
             ";FOLD LIN SPEED IS 0.05 m/sec, INTERPOLATION SETTINGS IN FOLD\n"
-            f"$VEL.CP={speed}\n"
+            f"$VEL.CP={lspeed:.4f}\n"
             f"$ADVANCE={advance}\n"
             ";ENDFOLD\n"
         )
 
-    def add_move_ptp(self, x, y, z, a=0, b=90, c=0):
-        """Adds a PTP move"""
-        self.motion_section += f"PTP {{X {x}, Y {y}, Z {z}, A {a}, B {b}, C {c}}}\n"
+        self.motion_section += f"PTP {{A1 {pos['A1']}, A2 {pos['A2']}, A3 {pos['A3']}, A4 {pos['A4']}, A5 {pos['A5']}, A6 {pos['A6']}, E1 {pos['E1']}, E2 {pos['E2']}, E3 {pos['E3']}, E4 {pos['E4']}}}\n"
 
+    def set_linear_speed(self, speed=0.05):
+        """Sets the linear speed (TCP speed in m/sec)"""
+        self.motion_section += f"$VEL.CP={speed:.4f}\n"
+
+    def set_advance(self, advance=3):
+        """Sets the advance parameter (motion look-ahead)"""
+        self.motion_section += f"$ADVANCE={advance}\n"
+
+    def add_move_ptp(self, *args, joint=False):
+        """
+        Adds a PTP movement.
+
+        Parameters:
+        - If `joint=True`, expects joint angles: A1, A2, A3, A4, A5, A6 (E1-E4 optional)
+        - If `joint=False`, expects Cartesian coordinates: X, Y, Z, A, B, C
+        """
+
+        if joint:
+            # Handle Joint Position PTP
+            if len(args) < 6:
+                raise ValueError("Joint PTP movement requires at least 6 joint angles (A1-A6).")
+            
+            A1, A2, A3, A4, A5, A6 = args[:6]
+            extra_axes = ", ".join([f"E{i+1} {args[i+6]:.4f}" for i in range(len(args) - 6)]) if len(args) > 6 else ""
+            self.motion_section += f"PTP {{A1 {A1:.4f}, A2 {A2:.4f}, A3 {A3:.4f}, A4 {A4:.4f}, A5 {A5:.4f}, A6 {A6:.4f}{', ' + extra_axes if extra_axes else ''}}}\n"
+
+        else:
+            # Handle Cartesian Position PTP
+            if len(args) < 3:
+                raise ValueError("Cartesian PTP movement requires at least X, Y, Z coordinates.")
+            
+            x, y, z = args[:3]
+            a, b, c = (args[3:] if len(args) >= 6 else (0, 90, 0))
+            self.motion_section += f"PTP {{X {x:.4f}, Y {y:.4f}, Z {z:.4f}, A {a:.4f}, B {b:.4f}, C {c:.4f}}}\n"
     def add_linear_move(self, x, y, z, a=0, b=90, c=0):
         """Adds a linear move"""
-        self.motion_section += f"LIN {{X {x}, Y {y}, Z {z}, A {a}, B {b}, C {c}}} C_DIS\n"
+        self.motion_section += f"LIN {{X {x:.4f}, Y {y:.4f}, Z {z:.4f}, A {a:.4f}, B {b:.4f}, C {c:.4f}}} C_DIS\n"
 
-    def set_end_position(self, pos=None):
-        """Defines the end position"""
-        if pos is None:
-            pos = {"A1": 5, "A2": -90, "A3": 100, "A4": 5, "A5": -10, "A6": -5, "E1": 0, "E2": 0, "E3": 0, "E4": 0}
-
-        self.motion_section += (
-            f"PTP {{A1 {pos['A1']}, A2 {pos['A2']}, A3 {pos['A3']}, A4 {pos['A4']}, A5 {pos['A5']}, A6 {pos['A6']}, "
-            f"E1 {pos['E1']}, E2 {pos['E2']}, E3 {pos['E3']}, E4 {pos['E4']}}} C_PTP\n"
-            ";ENDFOLD\n\n"
-        )
     def set_digital_output(self, output_no, value):
         """Sets a digital output (TRUE for ON, FALSE for OFF)"""
         value_str = "TRUE" if value else "FALSE"  # Convert to KRL-compatible format
@@ -112,9 +127,30 @@ class KRL:
 
     def end_program(self):
         """Ends the KRL program"""
+        pos = {"A1": 5, "A2": -90, "A3": 100, "A4": 5, "A5": -10, "A6": -5, "E1": 0, "E2": 0, "E3": 0, "E4": 0}
+        self.motion_section += f"PTP {{A1 {pos['A1']}, A2 {pos['A2']}, A3 {pos['A3']}, A4 {pos['A4']}, A5 {pos['A5']}, A6 {pos['A6']}, E1 {pos['E1']}, E2 {pos['E2']}, E3 {pos['E3']}, E4 {pos['E4']}}}\n"
         self.program = self.declaration_section + self.motion_section + "END\n"
 
     def save_program(self, filename="generated_module.src"):
         """Saves the KRL program to a file"""
         with open(filename, 'w') as file:
             file.write(self.program)
+            
+    def change_variable(self, variable_name, variable_value):
+        """
+        Adds a variable update command to the KRL program.
+
+        Parameters:
+        krl_program (object): Instance of the KRL program.
+        variable_name (str): Name of the KRL variable to update.
+        value (int, float, or bool): New value to assign to the variable.
+        """
+        if isinstance(variable_value, bool):
+            variable_value = "TRUE" if variable_value else "FALSE"
+        elif isinstance(variable_value, (int, float)):
+            variable_value  = str(variable_value)
+        else:
+            raise ValueError("Unsupported value type for KRL variable.")
+
+        self.motion_section+=(f"{variable_name} = {variable_value}\n")
+            

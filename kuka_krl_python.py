@@ -127,8 +127,6 @@ class KRL:
 
     def end_program(self):
         """Ends the KRL program"""
-        pos = {"A1": 5, "A2": -90, "A3": 100, "A4": 5, "A5": -10, "A6": -5, "E1": 0, "E2": 0, "E3": 0, "E4": 0}
-        self.motion_section += f"PTP {{A1 {pos['A1']}, A2 {pos['A2']}, A3 {pos['A3']}, A4 {pos['A4']}, A5 {pos['A5']}, A6 {pos['A6']}, E1 {pos['E1']}, E2 {pos['E2']}, E3 {pos['E3']}, E4 {pos['E4']}}}\n"
         self.program = self.declaration_section + self.motion_section + "END\n"
 
     def save_program(self, filename="generated_module.src"):
@@ -146,11 +144,16 @@ class KRL:
         value (int, float, or bool): New value to assign to the variable.
         """
         if isinstance(variable_value, bool):
+            # Ensure exact KRL boolean format
             variable_value = "TRUE" if variable_value else "FALSE"
         elif isinstance(variable_value, (int, float)):
-            variable_value  = str(variable_value)
+            # Format numeric values with 6 decimal places for precision
+            variable_value = f"{variable_value:.6f}"
         else:
             raise ValueError("Unsupported value type for KRL variable.")
 
-        self.motion_section+=(f"{variable_name} = {variable_value}\n")
+        # Add the variable change
+        self.motion_section += f"{variable_name} = {variable_value}\n"
+        # Add a small delay to ensure the variable is set before the next motion
+        self.motion_section += "WAIT SEC 0.001\n"
             
